@@ -9,6 +9,7 @@ Implements Delegated Proof of Stake to
 1. select the active set of eligible block producers
 2. reward block authors
 3. enable nominators and collators to participate in inflationary rewards
+4. enable pallet session implementation to select active block producer for Aura.
 
 Links:
 
