@@ -1,6 +1,6 @@
 # DPoS Pallet for Parachain Staking
 
-## Initial developed by Purestake
+## Initially developed by Purestake
 
 ## Description
 

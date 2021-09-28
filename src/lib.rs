@@ -670,7 +670,7 @@ pub mod pallet {
 
     /// Configuration trait of this pallet.
     #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_session::Config {
+    pub trait Config: frame_system::Config {
         /// Overarching event type
         type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
         /// The currency type
@@ -1177,6 +1177,7 @@ pub mod pallet {
             <CandidatePool<T>>::put(candidates);
             let new_total = <Total<T>>::get().saturating_add(bond);
             <Total<T>>::put(new_total);
+            log::info!("Joined successful {:?}", acc.clone());
             Self::deposit_event(Event::JoinedCollatorCandidates(acc, bond, new_total));
             Ok(().into())
         }
@@ -1720,9 +1721,11 @@ pub mod pallet {
         /// a vec of their AccountIds (in the order of selection)
         pub fn compute_top_candidates() -> Vec<T::AccountId> {
             let mut candidates = <CandidatePool<T>>::get().0;
+            log::info!("Total candidates {}", candidates.len());
             // order candidates by stake (least to greatest so requires `rev()`)
             candidates.sort_unstable_by(|a, b| a.amount.partial_cmp(&b.amount).unwrap());
             let top_n = <TotalSelected<T>>::get() as usize;
+            log::info!("Total selected candidates {}", top_n);
             // choose the top TotalSelected qualified candidates, ordered by stake
             let mut collators = candidates
                 .into_iter()
@@ -1732,6 +1735,9 @@ pub mod pallet {
                 .map(|x| x.owner)
                 .collect::<Vec<T::AccountId>>();
             collators.sort();
+            for collator in collators.clone() {
+                log::info!("Collator {:?}", collator);
+            }
             collators
         }
         /// Best as in most cumulatively supported in terms of stake
@@ -1757,22 +1763,22 @@ pub mod pallet {
         }
     }
 
-//	/// Add reward points to block authors:
-//	/// * 20 points to the block producer for producing a block in the chain
-//	impl<T: Config> nimbus_primitives::EventHandler<T::AccountId> for Pallet<T> {
-//		fn note_author(author: T::AccountId) {
-//			let now = <Round<T>>::get().current;
-//			let score_plus_20 = <AwardedPts<T>>::get(now, &author) + 20;
-//			<AwardedPts<T>>::insert(now, author, score_plus_20);
-//			<Points<T>>::mutate(now, |x| *x += 20);
-//		}
-//	}
-//
-//	impl<T: Config> nimbus_primitives::CanAuthor<T::AccountId> for Pallet<T> {
-//		fn can_author(account: &T::AccountId, _slot: &u32) -> bool {
-//			Self::is_selected_candidate(account)
-//		}
-//	}
+    //	/// Add reward points to block authors:
+    //	/// * 20 points to the block producer for producing a block in the chain
+    //	impl<T: Config> nimbus_primitives::EventHandler<T::AccountId> for Pallet<T> {
+    //		fn note_author(author: T::AccountId) {
+    //			let now = <Round<T>>::get().current;
+    //			let score_plus_20 = <AwardedPts<T>>::get(now, &author) + 20;
+    //			<AwardedPts<T>>::insert(now, author, score_plus_20);
+    //			<Points<T>>::mutate(now, |x| *x += 20);
+    //		}
+    //	}
+    //
+    //	impl<T: Config> nimbus_primitives::CanAuthor<T::AccountId> for Pallet<T> {
+    //		fn can_author(account: &T::AccountId, _slot: &u32) -> bool {
+    //			Self::is_selected_candidate(account)
+    //		}
+    //	}
 
     impl<T: Config> Get<Vec<T::AccountId>> for Pallet<T> {
         fn get() -> Vec<T::AccountId> {
