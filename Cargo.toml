@@ -18,6 +18,8 @@ substrate-fixed = { default-features = false, git = "https://github.com/encointe
 pallet-session = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.11", default-features = false }
 sp-core = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.11", default-features = false }
 sp-io = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.11", default-features = false }
+scale-info = { version = "1.0", default-features = false, features = ["derive"] }
+
 [dev-dependencies]
 pallet-balances = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.11" }
 similar-asserts = "1.1.0"
@@ -34,6 +36,7 @@ std = [
     "sp-runtime/std",
     "sp-std/std",
     "pallet-session/std",
+    "scale-info/std"
 ]
 runtime-benchmarks = ["frame-benchmarking"]
 try-runtime = ["frame-support/try-runtime"]
