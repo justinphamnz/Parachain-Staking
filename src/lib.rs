@@ -71,12 +71,12 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use pallet_session::Pallet as Session;
     use parity_scale_codec::{Decode, Encode};
+    use scale_info::TypeInfo;
     use sp_runtime::{
         traits::{AtLeast32BitUnsigned, Convert, Saturating, Zero},
         Perbill, Percent, RuntimeDebug,
     };
     use sp_std::{cmp::Ordering, collections::btree_map::BTreeMap, prelude::*};
-    use scale_info::TypeInfo;
 
     /// Pallet for parachain staking
     #[pallet::pallet]
@@ -603,7 +603,7 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug)]
+    #[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo)]
     /// Reserve information { account, percent_of_inflation }
     pub struct ParachainBondConfig<AccountId> {
         /// Account which receives funds intended for parachain bond
