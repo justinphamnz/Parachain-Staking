@@ -46,6 +46,12 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use frame_support::pallet;
+
+pub use inflation::{InflationInfo, Range};
+pub use pallet::*;
+use weights::WeightInfo;
+
 #[cfg(any(test, feature = "runtime-benchmarks"))]
 mod benchmarks;
 mod inflation;
@@ -57,15 +63,8 @@ mod tests;
 
 pub mod weights;
 
-use weights::WeightInfo;
-
-use frame_support::pallet;
-pub use inflation::{InflationInfo, Range};
-pub use pallet::*;
-
 #[pallet]
 pub mod pallet {
-    use crate::{pallet, set::OrderedSet, InflationInfo, Range, WeightInfo};
     use frame_support::pallet_prelude::*;
     use frame_support::traits::{Currency, Get, Imbalance, ReservableCurrency};
     use frame_system::pallet_prelude::*;
@@ -73,10 +72,12 @@ pub mod pallet {
     use parity_scale_codec::{Decode, Encode};
     use scale_info::TypeInfo;
     use sp_runtime::{
-        traits::{AtLeast32BitUnsigned, Convert, Saturating, Zero},
-        Perbill, Percent, RuntimeDebug,
+        Perbill,
+        Percent, RuntimeDebug, traits::{AtLeast32BitUnsigned, Convert, Saturating, Zero},
     };
-    use sp_std::{cmp::Ordering, collections::btree_map::BTreeMap, prelude::*};
+    use sp_std::{cmp::Ordering, collections::btree_map::BTreeMap, prelude::*, vec};
+
+    use crate::{InflationInfo, pallet, Range, set::OrderedSet, WeightInfo};
 
     /// Pallet for parachain staking
     #[pallet::pallet]
