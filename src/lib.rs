@@ -81,9 +81,10 @@ pub mod pallet {
 
     /// Pallet for parachain staking
     #[pallet::pallet]
+    #[pallet::without_storage_info]
     pub struct Pallet<T>(PhantomData<T>);
 
-    #[derive(Default, Clone, Encode, Decode, RuntimeDebug, TypeInfo)]
+    #[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo)]
     pub struct Bond<AccountId, Balance> {
         pub owner: AccountId,
         pub amount: Balance,
@@ -604,24 +605,6 @@ pub mod pallet {
         }
     }
 
-    #[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo)]
-    /// Reserve information { account, percent_of_inflation }
-    pub struct ParachainBondConfig<AccountId> {
-        /// Account which receives funds intended for parachain bond
-        pub account: AccountId,
-        /// Percent of inflation set aside for parachain bond account
-        pub percent: Percent,
-    }
-
-    impl<A: Default> Default for ParachainBondConfig<A> {
-        fn default() -> ParachainBondConfig<A> {
-            ParachainBondConfig {
-                account: A::default(),
-                percent: Percent::zero(),
-            }
-        }
-    }
-
     #[derive(Encode, Decode, RuntimeDebug, Default, TypeInfo)]
     /// Store and process all delayed exits by collators and nominators
     pub struct ExitQ<AccountId> {
@@ -855,11 +838,6 @@ pub mod pallet {
     type TotalSelected<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::storage]
-    #[pallet::getter(fn parachain_bond_info)]
-    /// Parachain bond config info { account, percent_of_inflation }
-    type ParachainBondInfo<T: Config> = StorageValue<_, ParachainBondConfig<T::AccountId>, ValueQuery>;
-
-    #[pallet::storage]
     #[pallet::getter(fn round)]
     /// Current round index and next round scheduled transition
     type Round<T: Config> = StorageValue<_, RoundInfo<T::BlockNumber>, ValueQuery>;
@@ -889,12 +867,12 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn candidate_pool)]
     /// The pool of collator candidates, each with their total backing stake
-    type CandidatePool<T: Config> = StorageValue<_, OrderedSet<Bond<T::AccountId, BalanceOf<T>>>, ValueQuery>;
+    type CandidatePool<T: Config> = StorageValue<_, OrderedSet<Bond<T::AccountId, BalanceOf<T>>>>;
 
     #[pallet::storage]
     #[pallet::getter(fn exit_queue2)]
     /// A queue of collators and nominators awaiting exit
-    type ExitQueue2<T: Config> = StorageValue<_, ExitQ<T::AccountId>, ValueQuery>;
+    type ExitQueue2<T: Config> = StorageValue<_, ExitQ<T::AccountId>, OptionQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn at_stake)]
@@ -906,7 +884,6 @@ pub mod pallet {
         Twox64Concat,
         T::AccountId,
         CollatorSnapshot<T::AccountId, BalanceOf<T>>,
-        ValueQuery,
     >;
 
     #[pallet::storage]
@@ -928,7 +905,7 @@ pub mod pallet {
     #[pallet::getter(fn awarded_pts)]
     /// Points for each collator per round
     pub type AwardedPts<T: Config> =
-    StorageDoubleMap<_, Twox64Concat, RoundIndex, Twox64Concat, T::AccountId, RewardPoint, ValueQuery>;
+    StorageDoubleMap<_, Twox64Concat, RoundIndex, Twox64Concat, T::AccountId, RewardPoint, OptionQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn flag)]
@@ -1016,11 +993,6 @@ pub mod pallet {
             // Set collator commission to default config
             <CollatorCommission<T>>::put(T::DefaultCollatorCommission::get());
             // Set parachain bond config to default config
-            <ParachainBondInfo<T>>::put(ParachainBondConfig {
-                // must be set soon; if not => due inflation will be sent to collators/nominators
-                account: T::AccountId::default(),
-                percent: T::DefaultParachainBondReservePercent::get(),
-            });
             // Set total selected candidates to minimum config
             <TotalSelected<T>>::put(T::MinSelectedCandidates::get());
             // Choose top TotalSelected collator candidates
@@ -1076,29 +1048,7 @@ pub mod pallet {
             <InflationConfig<T>>::put(config);
             Ok(().into())
         }
-        /// Set the account that will hold funds set aside for parachain bond
-        #[pallet::weight(< T as Config >::WeightInfo::set_parachain_bond_account())]
-        pub fn set_parachain_bond_account(origin: OriginFor<T>, new: T::AccountId) -> DispatchResultWithPostInfo {
-            T::MonetaryGovernanceOrigin::ensure_origin(origin)?;
-            let ParachainBondConfig { account: old, percent } = <ParachainBondInfo<T>>::get();
-            ensure!(old != new, Error::<T>::NoWritingSameValue);
-            <ParachainBondInfo<T>>::put(ParachainBondConfig {
-                account: new.clone(),
-                percent,
-            });
-            Self::deposit_event(Event::ParachainBondAccountSet(old, new));
-            Ok(().into())
-        }
-        /// Set the percent of inflation set aside for parachain bond
-        #[pallet::weight(< T as Config >::WeightInfo::set_parachain_bond_reserve_percent())]
-        pub fn set_parachain_bond_reserve_percent(origin: OriginFor<T>, new: Percent) -> DispatchResultWithPostInfo {
-            T::MonetaryGovernanceOrigin::ensure_origin(origin)?;
-            let ParachainBondConfig { account, percent: old } = <ParachainBondInfo<T>>::get();
-            ensure!(old != new, Error::<T>::NoWritingSameValue);
-            <ParachainBondInfo<T>>::put(ParachainBondConfig { account, percent: new });
-            Self::deposit_event(Event::ParachainBondReservePercentSet(old, new));
-            Ok(().into())
-        }
+
         #[pallet::weight(< T as Config >::WeightInfo::set_total_selected())]
         /// Set the total number of collator candidates selected per round
         /// - changes are not applied until the start of the next round
@@ -1160,7 +1110,7 @@ pub mod pallet {
             ensure!(!Self::is_candidate(&acc), Error::<T>::CandidateExists);
             ensure!(!Self::is_nominator(&acc), Error::<T>::NominatorExists);
             ensure!(bond >= T::MinCollatorCandidateStk::get(), Error::<T>::ValBondBelowMin);
-            let mut candidates = <CandidatePool<T>>::get();
+            let mut candidates = <CandidatePool<T>>::get().ok_or(Error::<T>::CandidateDNE)?;
             let old_count = candidates.0.len() as u32;
             ensure!(
 				candidate_count >= old_count,
@@ -1191,12 +1141,12 @@ pub mod pallet {
             let collator = ensure_signed(origin)?;
             let mut state = <CollatorState2<T>>::get(&collator).ok_or(Error::<T>::CandidateDNE)?;
             ensure!(!state.is_leaving(), Error::<T>::CandidateAlreadyLeaving);
-            let mut exits = <ExitQueue2<T>>::get();
+            let mut exits = <ExitQueue2<T>>::get().ok_or(Error::<T>::CandidateExists)?;
             let now = <Round<T>>::get().current;
             let when = now + T::LeaveCandidatesDelay::get();
             exits.schedule_candidate_exit::<T>(collator.clone(), when)?;
             state.leave(when);
-            let mut candidates = <CandidatePool<T>>::get();
+            let mut candidates = <CandidatePool<T>>::get().ok_or(Error::<T>::CandidateDNE)?;
             ensure!(
 				candidate_count >= candidates.0.len() as u32,
 				Error::<T>::TooLowCollatorCandidateCountToLeaveCandidates
@@ -1216,7 +1166,7 @@ pub mod pallet {
             let mut state = <CollatorState2<T>>::get(&collator).ok_or(Error::<T>::CandidateDNE)?;
             ensure!(state.is_active(), Error::<T>::AlreadyOffline);
             state.go_offline();
-            let mut candidates = <CandidatePool<T>>::get();
+            let mut candidates = <CandidatePool<T>>::get().ok_or(Error::<T>::CandidateDNE)?;
             if candidates.remove(&Bond::from_owner(collator.clone())) {
                 <CandidatePool<T>>::put(candidates);
             }
@@ -1232,7 +1182,7 @@ pub mod pallet {
             ensure!(!state.is_active(), Error::<T>::AlreadyActive);
             ensure!(!state.is_leaving(), Error::<T>::CannotActBecauseLeaving);
             state.go_online();
-            let mut candidates = <CandidatePool<T>>::get();
+            let mut candidates = <CandidatePool<T>>::get().ok_or(Error::<T>::CandidateDNE)?;
             ensure!(
 				candidates.insert(Bond {
 					owner: collator.clone(),
@@ -1356,7 +1306,7 @@ pub mod pallet {
 				nomination_count >= (state.nominations.0.len() as u32),
 				Error::<T>::TooLowNominationCountToLeaveNominators
 			);
-            let mut exits = <ExitQueue2<T>>::get();
+            let mut exits = <ExitQueue2<T>>::get().ok_or(Error::<T>::CandidateExists)?;
             let now = <Round<T>>::get().current;
             let when = now + T::LeaveNominatorsDelay::get();
             exits.schedule_nominator_exit::<T>(acc.clone(), when)?;
@@ -1395,7 +1345,7 @@ pub mod pallet {
                 ensure!(remaining >= T::MinNominatorStk::get(), Error::<T>::NomBondBelowMin);
                 false
             };
-            let mut exits = <ExitQueue2<T>>::get();
+            let mut exits = <ExitQueue2<T>>::get().ok_or(Error::<T>::CandidateExists)?;
             let now = <Round<T>>::get().current;
             let when = now + T::RevokeNominationDelay::get();
             if leaving {
@@ -1496,14 +1446,16 @@ pub mod pallet {
             <SelectedCandidates<T>>::get().binary_search(acc).is_ok()
         }
         // ensure candidate is active before calling
-        fn update_active(candidate: T::AccountId, total: BalanceOf<T>) {
-            let mut candidates = <CandidatePool<T>>::get();
+        fn update_active(candidate: T::AccountId, total: BalanceOf<T>) -> DispatchResult {
+            let mut candidates = <CandidatePool<T>>::get().ok_or(Error::<T>::CandidateExists)?;
             candidates.remove(&Bond::from_owner(candidate.clone()));
             candidates.insert(Bond {
                 owner: candidate,
                 amount: total,
             });
             <CandidatePool<T>>::put(candidates);
+
+            Ok(())
         }
         // Calculate round issuance based on total staked for the given round
         fn compute_issuance(staked: BalanceOf<T>) -> BalanceOf<T> {
@@ -1554,14 +1506,7 @@ pub mod pallet {
             let total_staked = <Staked<T>>::get(round_to_payout);
             let total_issuance = Self::compute_issuance(total_staked);
             let mut left_issuance = total_issuance;
-            // reserve portion of issuance for parachain bond account
-            let bond_config = <ParachainBondInfo<T>>::get();
-            let parachain_bond_reserve = bond_config.percent * total_issuance;
-            if let Ok(imb) = T::Currency::deposit_into_existing(&bond_config.account, parachain_bond_reserve) {
-                // update round issuance iff transfer succeeds
-                left_issuance -= imb.peek();
-                Self::deposit_event(Event::ReservedForParachainBond(bond_config.account, imb.peek()));
-            }
+
             let mint = |amt: BalanceOf<T>, to: T::AccountId| {
                 if let Ok(imb) = T::Currency::deposit_into_existing(&to, amt) {
                     Self::deposit_event(Event::Rewarded(to.clone(), imb.peek()));
@@ -1583,7 +1528,7 @@ pub mod pallet {
                 let pct_due = Perbill::from_rational(pts, total);
                 let mut amt_due = pct_due * left_issuance;
                 // Take the snapshot of block author and nominations
-                let state = <AtStake<T>>::take(round_to_payout, &val);
+                let state = <AtStake<T>>::take(round_to_payout, &val).unwrap();
                 if state.nominators.is_empty() {
                     // solo collator with no nominators
                     mint(amt_due, val.clone());
@@ -1608,7 +1553,7 @@ pub mod pallet {
         }
         /// Executes all collator exits scheduled for when <= now
         fn execute_collator_exits(now: RoundIndex) {
-            let mut exit_queue = <ExitQueue2<T>>::get();
+            let mut exit_queue = <ExitQueue2<T>>::get().unwrap();
             let remaining_exits = exit_queue
                 .candidate_schedule
                 .clone()
@@ -1662,7 +1607,7 @@ pub mod pallet {
         }
         /// Executes all nominator exits for when <= now
         fn execute_nominator_exits(now: RoundIndex) {
-            let mut exit_queue = <ExitQueue2<T>>::get();
+            let mut exit_queue = <ExitQueue2<T>>::get().unwrap();
             let remaining_exits = exit_queue
                 .nominator_schedule
                 .clone()
@@ -1722,7 +1667,7 @@ pub mod pallet {
         /// Compute the top `TotalSelected` candidates in the CandidatePool and return
         /// a vec of their AccountIds (in the order of selection)
         pub fn compute_top_candidates() -> Vec<T::AccountId> {
-            let mut candidates = <CandidatePool<T>>::get().0;
+            let mut candidates = <CandidatePool<T>>::get().unwrap().0;
             log::info!("Total candidates {}", candidates.len());
             // order candidates by stake (least to greatest so requires `rev()`)
             candidates.sort_unstable_by(|a, b| a.amount.partial_cmp(&b.amount).unwrap());
